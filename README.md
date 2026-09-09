@@ -44,3 +44,24 @@ python ingest/ingest.py
 ```
 
 This will read all files from your `CORPUS_PATH`, process them, and output normalized JSON records to `data/processed/chunks.jsonl`.
+
+## Running the Demonstration UI
+
+Ensure these files exist:
+- data/processed/graph.json
+- data/processed/chunks.jsonl
+
+If graph.json is missing:
+\\\ash
+python -m graph.rebuild --input data/processed/sample_extractions.jsonl
+\\\
+
+Start the interface:
+\\\ash
+streamlit run ui/app.py
+\\\
+
+The interface supports two modes:
+- **Offline deterministic mode** requires no API call and runs entirely locally.
+- **Online synthesis** requires OPENROUTER_API_KEY. If the API fails, it automatically falls back to deterministic evidence formatting.
+
