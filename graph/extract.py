@@ -50,8 +50,9 @@ Respond with valid JSON ONLY — no markdown fences, no commentary, no explanati
 4. "justification": a SHORT quote (≤30 words) from the source text.
 5. Negation: set "negated" to true only if the text explicitly says a relation does NOT hold.
 6. Do NOT invent facts not supported by the text.
-7. If nothing to extract, return {{"entities": [], "relations": []}}.
-8. Use "related_to" only as a last resort.
+7. REFERENTIAL INTEGRITY: Every `source_entity` and `target_entity` used in your relations MUST be defined in your `entities` array above it. Do not reference entities you haven't extracted.
+8. If nothing to extract, return {{"entities": [], "relations": []}}.
+9. Use "related_to" only as a last resort.
 
 ## CRITICAL: target_entity vs property_value
 
@@ -66,22 +67,27 @@ For ALL other relation types:
 - Set "target_entity" to the real named entity
 - Set "property_value" to "" (empty string)
 
-### CORRECT examples:
+### CORRECT example output:
 ```json
-{{"source_entity": "Ashen Wastes", "relation_type": "has_property", "target_entity": "", "property_value": "vast scale", "negated": false, "confidence": 0.8, "justification": "the Wastes stretch endlessly"}}
-{{"source_entity": "Kael Ashborn", "relation_type": "has_property", "target_entity": "", "property_value": "exceptional endurance", "negated": false, "confidence": 0.7, "justification": "known for tireless marches"}}
-{{"source_entity": "The Pale Marsh", "relation_type": "has_property", "target_entity": "", "property_value": "difficult to navigate", "negated": false, "confidence": 0.9, "justification": "few who enter find their way out"}}
-{{"source_entity": "Kael Ashborn", "relation_type": "member_of", "target_entity": "Iron Covenant", "property_value": "", "negated": false, "confidence": 1.0, "justification": "Kael swore the binding oath"}}
+{{
+  "entities": [
+    {{"name": "Ashen Wastes", "entity_type": "Location", "aliases": []}},
+    {{"name": "Kael Ashborn", "entity_type": "Character", "aliases": ["Kael"]}},
+    {{"name": "Iron Covenant", "entity_type": "Faction", "aliases": []}}
+  ],
+  "relations": [
+    {{"source_entity": "Ashen Wastes", "relation_type": "has_property", "target_entity": "", "property_value": "vast scale", "negated": false, "confidence": 0.8, "justification": "the Wastes stretch endlessly"}},
+    {{"source_entity": "Kael Ashborn", "relation_type": "has_property", "target_entity": "", "property_value": "exceptional endurance", "negated": false, "confidence": 0.7, "justification": "known for tireless marches"}},
+    {{"source_entity": "Kael Ashborn", "relation_type": "member_of", "target_entity": "Iron Covenant", "property_value": "", "negated": false, "confidence": 1.0, "justification": "Kael swore the binding oath"}}
+  ]
+}}
 ```
 
-### WRONG examples (these will be REJECTED by validation):
-```json
-{{"source_entity": "Kael Ashborn", "relation_type": "has_property", "target_entity": "endurance", "property_value": "", ...}}
-{{"source_entity": "The Pale Marsh", "relation_type": "has_property", "target_entity": "difficult to navigate", "property_value": "", ...}}
-{{"source_entity": "Kael Ashborn", "relation_type": "member_of", "target_entity": "vigilance", ...}}
-{{"source_entity": "Iron Covenant", "relation_type": "allied_with", "target_entity": "severe terrain", ...}}
-```
-These are wrong because "endurance", "difficult to navigate", "vigilance", and "severe terrain" are not named entities — they are descriptions.
+### WRONG relation examples (these will be REJECTED by validation):
+- `target_entity: "endurance"` ❌ (Not a named entity, use has_property instead)
+- `target_entity: "difficult to navigate"` ❌ (Description, use has_property instead)
+- `target_entity: "vigilance"` ❌ (Not a named entity)
+- `target_entity: "severe terrain"` ❌ (Not a named entity)
 """
 
 
