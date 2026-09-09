@@ -23,6 +23,7 @@ from graph.extract import extract_from_chunk
 from graph.aggregate import build_entity_index
 from graph.vault_writer import write_vault
 from graph.stats import compute_stats, save_stats, print_stats_summary
+from graph.graph_store import export_graph
 
 # Configure logging
 logging.basicConfig(
@@ -37,6 +38,7 @@ CHUNKS_FILE = os.path.join(PROJECT_ROOT, "data", "processed", "chunks.jsonl")
 VAULT_DIR = os.path.join(PROJECT_ROOT, "data", "vault")
 STATS_FILE = os.path.join(PROJECT_ROOT, "data", "processed", "extraction_stats.json")
 SAMPLE_EXTRACTIONS_FILE = os.path.join(PROJECT_ROOT, "data", "processed", "sample_extractions.jsonl")
+GRAPH_JSON_FILE = os.path.join(PROJECT_ROOT, "data", "processed", "graph.json")
 
 # How many chunks per doc_type
 SAMPLES_PER_TYPE = 5
@@ -144,6 +146,11 @@ def main():
     logger.info("Aggregating entities and relations...")
     entity_index, ambiguous_merges = build_entity_index(all_extractions)
 
+    # Export machine-readable JSON graph
+    logger.info("Exporting JSON graph to %s...", GRAPH_JSON_FILE)
+    graph_summary = export_graph(entity_index, GRAPH_JSON_FILE)
+    logger.info("Exported %d entities and %d relations.", graph_summary["entity_count"], graph_summary["relation_count"])
+
     # Write vault
     logger.info("Writing vault notes to %s...", VAULT_DIR)
     notes_written = write_vault(entity_index, VAULT_DIR)
@@ -159,6 +166,7 @@ def main():
     print_stats_summary(stats)
 
     print(f"\n[OK] {notes_written} vault notes written to: {os.path.abspath(VAULT_DIR)}")
+    print(f"[OK] JSON graph exported to: {os.path.abspath(GRAPH_JSON_FILE)} ({graph_summary['entity_count']} entities, {graph_summary['relation_count']} relations)")
     print(f"[OK] Extraction stats saved to: {os.path.abspath(STATS_FILE)}")
     print(f"[OK] Raw extractions saved to: {os.path.abspath(SAMPLE_EXTRACTIONS_FILE)}")
     print("\nReview the vault notes and stats before running full-corpus extraction.")
