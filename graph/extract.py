@@ -30,12 +30,12 @@ MAX_RETRIES_MALFORMED = 2
 
 SYSTEM_PROMPT = f"""You are a precise knowledge-graph extraction engine for the "Ashen Era" fictional universe.
 
-Given a text chunk from this universe's documents, extract ALL named entities and ALL relations between them.
+Given a text chunk, extract ALL named entities and ALL relations between them.
 
 ## Output Format
-You MUST respond with valid JSON and nothing else — no markdown fences, no commentary.
-The JSON must conform exactly to this schema:
+Respond with valid JSON ONLY — no markdown fences, no commentary, no explanation.
 
+## JSON Schema
 ```json
 {json.dumps(LLM_OUTPUT_SCHEMA, indent=2)}
 ```
@@ -44,24 +44,44 @@ The JSON must conform exactly to this schema:
 {get_schema_description()}
 
 ## Rules
-1. Extract EVERY entity mentioned in the text, even if it only appears once.
-2. Extract EVERY relation you can identify — explicit or strongly implied.
-3. Each entity name should be its most complete canonical form from the text.
-   List shorter forms or abbreviations in the "aliases" array.
-4. For the "justification" field, provide a SHORT quote or close paraphrase
-   (≤30 words) from the source text that supports the relation.
-5. If the text explicitly states a relation does NOT hold, set "negated" to true.
-   Example: "Kael never joined the Covenant" → member_of, negated=true.
-6. Do NOT invent entities or relations not supported by the text.
-7. If no entities or relations are found, return {{"entities": [], "relations": []}}.
-8. Use "related_to" ONLY when no other relation type fits.
-9. CRITICAL — has_property: "target_entity" must ALWAYS be a real named entity
-   (a proper noun matching one of the 14 entity types). Descriptive qualities
-   like "vast scale", "extreme heat", "difficult to escape" are NOT entities.
-   For has_property relations: set "target_entity" to "" (empty string) and
-   put the descriptive value in "property_value". For ALL other relation types,
-   "property_value" should be "" (empty string) and "target_entity" must be
-   a real named entity. Do NOT create entity entries for descriptive phrases.
+1. Extract EVERY named entity in the text (proper nouns — people, places, organizations, items, events, etc.).
+2. Extract EVERY relation you can identify between named entities.
+3. Use the most complete canonical name for each entity. Put abbreviations in "aliases".
+4. "justification": a SHORT quote (≤30 words) from the source text.
+5. Negation: set "negated" to true only if the text explicitly says a relation does NOT hold.
+6. Do NOT invent facts not supported by the text.
+7. If nothing to extract, return {{"entities": [], "relations": []}}.
+8. Use "related_to" only as a last resort.
+
+## CRITICAL: target_entity vs property_value
+
+"target_entity" must ALWAYS be a real proper-noun named entity that exists in the world.
+It must NEVER be a descriptive phrase, common noun, quality, or abstract attribute.
+
+For descriptive qualities/attributes, use relation_type "has_property":
+- Set "target_entity" to "" (empty string)
+- Put the quality in "property_value"
+
+For ALL other relation types:
+- Set "target_entity" to the real named entity
+- Set "property_value" to "" (empty string)
+
+### CORRECT examples:
+```json
+{{"source_entity": "Ashen Wastes", "relation_type": "has_property", "target_entity": "", "property_value": "vast scale", "negated": false, "confidence": 0.8, "justification": "the Wastes stretch endlessly"}}
+{{"source_entity": "Kael Ashborn", "relation_type": "has_property", "target_entity": "", "property_value": "exceptional endurance", "negated": false, "confidence": 0.7, "justification": "known for tireless marches"}}
+{{"source_entity": "The Pale Marsh", "relation_type": "has_property", "target_entity": "", "property_value": "difficult to navigate", "negated": false, "confidence": 0.9, "justification": "few who enter find their way out"}}
+{{"source_entity": "Kael Ashborn", "relation_type": "member_of", "target_entity": "Iron Covenant", "property_value": "", "negated": false, "confidence": 1.0, "justification": "Kael swore the binding oath"}}
+```
+
+### WRONG examples (these will be REJECTED by validation):
+```json
+{{"source_entity": "Kael Ashborn", "relation_type": "has_property", "target_entity": "endurance", "property_value": "", ...}}
+{{"source_entity": "The Pale Marsh", "relation_type": "has_property", "target_entity": "difficult to navigate", "property_value": "", ...}}
+{{"source_entity": "Kael Ashborn", "relation_type": "member_of", "target_entity": "vigilance", ...}}
+{{"source_entity": "Iron Covenant", "relation_type": "allied_with", "target_entity": "severe terrain", ...}}
+```
+These are wrong because "endurance", "difficult to navigate", "vigilance", and "severe terrain" are not named entities — they are descriptions.
 """
 
 

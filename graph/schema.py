@@ -165,7 +165,7 @@ LLM_OUTPUT_SCHEMA = {
                         "description": "A short quote or close paraphrase from the text supporting this relation"
                     }
                 },
-                "required": ["source_entity", "relation_type", "target_entity",
+                "required": ["source_entity", "relation_type",
                              "negated", "confidence", "justification"]
             }
         }
@@ -200,6 +200,56 @@ def get_schema_description() -> str:
     )
 
 
+import re as _re
+
+# Words that are clearly prompt/instruction leakage, not real entity names
+_PROMPT_LEAK_PATTERNS = [
+    "any faction", "any entity", "any character", "any location",
+    "any named", "any other", "named power", "named entity",
+    "one of the", "matching one of", "14 entity types",
+]
+
+def _is_proper_name(text: str) -> bool:
+    """
+    Heuristic: does this string look like a proper noun / named entity
+    rather than a common-noun descriptive phrase?
+
+    Returns True for things like "Iron Covenant", "Kael Ashborn", "Vault 7".
+    Returns False for things like "endurance", "vast scale", "severe terrain",
+    "canonical temperament", "any faction, house, order, or other named power".
+    """
+    text = text.strip()
+    if not text:
+        return False
+
+    # Check for prompt leakage patterns
+    text_lower = text.lower()
+    for pattern in _PROMPT_LEAK_PATTERNS:
+        if pattern in text_lower:
+            return False
+
+    # Reject if it's a single common lowercase word (e.g. "endurance", "vigilance")
+    words = text.split()
+    if len(words) == 1 and text[0].islower():
+        return False
+
+    # Reject if entirely lowercase (e.g. "severe terrain", "difficult to escape")
+    if text == text.lower():
+        return False
+
+    # Reject if it reads like a sentence/clause (contains common stop-phrase patterns)
+    clause_markers = [" to ", " of the ", " that ", " which ", " or other ", " is ", " are "]
+    for marker in clause_markers:
+        if marker in text_lower and len(words) > 3:
+            return False
+
+    # Reject if excessively long — real entity names are rarely >6 words
+    if len(words) > 8:
+        return False
+
+    return True
+
+
 def validate_extraction(data: dict) -> tuple[bool, str]:
     """
     Validate that the LLM output conforms to our schema.
@@ -231,8 +281,6 @@ def validate_extraction(data: dict) -> tuple[bool, str]:
                      "negated", "confidence", "justification"]:
             if req not in rel:
                 return False, f"Relation {i} missing '{req}'"
-        if "target_entity" not in rel and "property_value" not in rel:
-            return False, f"Relation {i} missing both 'target_entity' and 'property_value'"
         if rel["relation_type"] not in RELATION_TYPE_VALUES:
             return False, f"Relation {i} has invalid relation_type: {rel['relation_type']}"
         if not isinstance(rel["negated"], bool):
@@ -242,18 +290,34 @@ def validate_extraction(data: dict) -> tuple[bool, str]:
         if not (0.0 <= rel["confidence"] <= 1.0):
             return False, f"Relation {i} 'confidence' out of range [0, 1]"
 
-        # has_property: require property_value, allow empty target_entity
+        # --- has_property: property_value required, target_entity must be empty ---
         if rel["relation_type"] == "has_property":
             if not rel.get("property_value", "").strip():
                 return False, (
                     f"Relation {i} is has_property but missing or empty 'property_value'"
                 )
+            # Reject if target_entity is still populated with a descriptive phrase
+            te = rel.get("target_entity", "").strip()
+            if te:
+                return False, (
+                    f"Relation {i} is has_property but target_entity is '{te}' — "
+                    f"move this to property_value and set target_entity to empty string"
+                )
         else:
-            # All other relation types require a non-empty target_entity
-            if not rel.get("target_entity", "").strip():
+            # --- All other relation types: require proper-name target_entity ---
+            te = rel.get("target_entity", "").strip()
+            if not te:
                 return False, (
                     f"Relation {i} ({rel['relation_type']}) has empty 'target_entity' "
                     f"— only has_property may omit target_entity"
                 )
+            if not _is_proper_name(te):
+                return False, (
+                    f"Relation {i} target_entity '{te}' looks like a descriptive phrase, "
+                    f"not a proper named entity. If this is a property/quality, use "
+                    f"has_property with property_value instead. If it IS a real entity, "
+                    f"capitalize it as a proper noun."
+                )
 
     return True, ""
+
