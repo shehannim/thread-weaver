@@ -268,6 +268,7 @@ def validate_extraction(data: dict) -> tuple[bool, str]:
     if not isinstance(data["relations"], list):
         return False, "'relations' is not an array"
 
+    valid_entity_names = set()
     for i, ent in enumerate(data["entities"]):
         if "name" not in ent:
             return False, f"Entity {i} missing 'name'"
@@ -275,12 +276,21 @@ def validate_extraction(data: dict) -> tuple[bool, str]:
             return False, f"Entity {i} missing 'entity_type'"
         if ent["entity_type"] not in ENTITY_TYPE_VALUES:
             return False, f"Entity {i} has invalid entity_type: {ent['entity_type']}"
+        
+        valid_entity_names.add(ent["name"].lower())
+        for alias in ent.get("aliases", []):
+            valid_entity_names.add(alias.lower())
 
     for i, rel in enumerate(data["relations"]):
         for req in ["source_entity", "relation_type",
                      "negated", "confidence", "justification"]:
             if req not in rel:
                 return False, f"Relation {i} missing '{req}'"
+        
+        src = str(rel["source_entity"]).strip()
+        if src.lower() not in valid_entity_names:
+            return False, f"Relation {i} source_entity '{src}' is not defined in the entities list."
+
         if rel["relation_type"] not in RELATION_TYPE_VALUES:
             return False, f"Relation {i} has invalid relation_type: {rel['relation_type']}"
         if not isinstance(rel["negated"], bool):
@@ -318,6 +328,8 @@ def validate_extraction(data: dict) -> tuple[bool, str]:
                     f"has_property with property_value instead. If it IS a real entity, "
                     f"capitalize it as a proper noun."
                 )
+            if te.lower() not in valid_entity_names:
+                return False, f"Relation {i} target_entity '{te}' is not defined in the entities list."
 
     return True, ""
 
