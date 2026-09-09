@@ -1,0 +1,11 @@
+PyMuPDF
+pdfplumber
+pytesseract
+python-docx
+langchain-text-splitters
+tenacity
+python-dotenv
+requests
+Pillow
+streamlit
+thefuzz
