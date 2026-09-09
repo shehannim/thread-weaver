@@ -37,12 +37,12 @@ STATS_FILE = os.path.join(PROJECT_ROOT, "data", "processed", "extraction_stats_f
 EXTRACTIONS_FILE = os.path.join(PROJECT_ROOT, "data", "processed", "full_extractions.jsonl")
 
 # Concurrency & Rate Limiting
-# OpenRouter free tier limit is roughly 20 requests per minute
-# We use 18 RPM to leave a small buffer for retries
 REQUESTS_PER_MINUTE = 18 
 SECONDS_PER_REQUEST = 60.0 / REQUESTS_PER_MINUTE
-MAX_WORKERS = 30  # Enough to keep threads busy while waiting for 60-90s API responses
+MAX_WORKERS = 15  # As requested, ~10-15 concurrent chunks
 
+# Lock for writing to the extractions file safely from multiple threads
+file_lock = threading.Lock()
 
 class RateLimiter:
     def __init__(self, interval_seconds: float):
@@ -51,7 +51,6 @@ class RateLimiter:
         self.last_call = 0.0
 
     def wait(self):
-        """Block until the interval has passed since the last call."""
         with self.lock:
             now = time.time()
             elapsed = now - self.last_call
@@ -63,21 +62,24 @@ global_rate_limiter = RateLimiter(SECONDS_PER_REQUEST)
 
 
 def process_chunk_worker(chunk: dict) -> dict | None:
-    """Worker function to process a single chunk, respecting the rate limit."""
-    # Wait for rate limit before hitting the API
     global_rate_limiter.wait()
     
     result = extract_from_chunk(chunk)
     if result is None:
         return None
         
-    # Attach chunk metadata for aggregation
     result["chunk_meta"] = {
         "chunk_id": chunk.get("chunk_id", ""),
         "doc_id": chunk.get("doc_id", ""),
         "source_reliability": chunk.get("source_reliability", ""),
         "page_number": chunk.get("page_number", ""),
     }
+    
+    # Checkpoint to disk immediately
+    with file_lock:
+        with open(EXTRACTIONS_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(result) + "\n")
+            
     return result
 
 
@@ -87,61 +89,91 @@ def main():
         print("Run `python ingest/ingest.py` first to generate chunks.jsonl")
         sys.exit(1)
 
-    # Load all chunks
-    chunks = []
+    # 1. Load already processed chunks to allow resuming
+    processed_chunk_ids = set()
+    all_extractions = []
+    
+    os.makedirs(os.path.dirname(EXTRACTIONS_FILE), exist_ok=True)
+    if os.path.exists(EXTRACTIONS_FILE):
+        with open(EXTRACTIONS_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        ext = json.loads(line)
+                        cid = ext.get("chunk_meta", {}).get("chunk_id")
+                        if cid:
+                            processed_chunk_ids.add(cid)
+                            all_extractions.append(ext)
+                    except json.JSONDecodeError:
+                        pass
+                        
+    if processed_chunk_ids:
+        logger.info("Found %d already processed chunks. Resuming...", len(processed_chunk_ids))
+
+    # 2. Load pending chunks
+    pending_chunks = []
     with open(CHUNKS_FILE, "r", encoding="utf-8") as f:
         for line in f:
             if line.strip():
-                chunks.append(json.loads(line.strip()))
+                c = json.loads(line.strip())
+                if c.get("chunk_id") not in processed_chunk_ids:
+                    pending_chunks.append(c)
                 
-    total_chunks = len(chunks)
-    logger.info("Loaded %d total chunks for full-corpus extraction.", total_chunks)
-    logger.info("Concurrency config: %d MAX_WORKERS, bounded to %d requests/minute.", MAX_WORKERS, REQUESTS_PER_MINUTE)
+    total_chunks = len(processed_chunk_ids) + len(pending_chunks)
+    logger.info("Loaded %d total chunks. %d remaining to process.", total_chunks, len(pending_chunks))
     
-    # Estimate time
-    estimated_seconds = total_chunks * SECONDS_PER_REQUEST
-    estimated_hours = estimated_seconds / 3600
-    logger.info("ESTIMATED TIME: ~%.2f hours (%.1f minutes).", estimated_hours, estimated_seconds / 60)
-    
-    all_extractions = []
-    failed_chunks = 0
-    completed = 0
-    start_time = time.time()
-
-    # Process concurrently
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        # Submit all jobs
-        future_to_chunk = {executor.submit(process_chunk_worker, c): c for c in chunks}
+    if not pending_chunks:
+        logger.info("All chunks already processed! Skipping to aggregation.")
+    else:
+        logger.info("Concurrency config: %d MAX_WORKERS, bounded to %d requests/minute.", MAX_WORKERS, REQUESTS_PER_MINUTE)
         
-        for future in as_completed(future_to_chunk):
-            chunk = future_to_chunk[future]
-            try:
-                result = future.result()
-                if result is None:
+        # Estimate time based on sample average latency
+        AVG_CHUNK_LATENCY_SEC = 75.0  # Assumed from 60-90s user report
+        concurrency_throughput = MAX_WORKERS / AVG_CHUNK_LATENCY_SEC
+        rate_limit_throughput = REQUESTS_PER_MINUTE / 60.0
+        
+        effective_throughput = min(concurrency_throughput, rate_limit_throughput)
+        estimated_seconds = len(pending_chunks) / effective_throughput if effective_throughput > 0 else 0
+        
+        logger.info(
+            "ESTIMATED TIME FOR %d CHUNKS: ~%.2f hours (%.1f minutes). "
+            "[Bottleneck: %s]",
+            len(pending_chunks),
+            estimated_seconds / 3600, 
+            estimated_seconds / 60,
+            "Rate Limit" if rate_limit_throughput < concurrency_throughput else "Concurrency Limit"
+        )
+        
+        failed_chunks = 0
+        completed = 0
+        start_time = time.time()
+
+        # 3. Process concurrently
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            future_to_chunk = {executor.submit(process_chunk_worker, c): c for c in pending_chunks}
+            
+            for future in as_completed(future_to_chunk):
+                chunk = future_to_chunk[future]
+                try:
+                    result = future.result()
+                    if result is None:
+                        failed_chunks += 1
+                    else:
+                        all_extractions.append(result)
+                except Exception as e:
+                    logger.error("Chunk %s raised an unhandled exception: %s", chunk.get("chunk_id", "?"), e)
                     failed_chunks += 1
-                else:
-                    all_extractions.append(result)
-            except Exception as e:
-                logger.error("Chunk %s raised an unhandled exception: %s", chunk.get("chunk_id", "?"), e)
-                failed_chunks += 1
-                
-            completed += 1
-            if completed % 50 == 0 or completed == total_chunks:
-                elapsed = time.time() - start_time
-                rate = completed / elapsed if elapsed > 0 else 0
-                logger.info(
-                    "Progress: %d/%d (%.1f%%) | Failed: %d | Rate: %.2f chunks/sec",
-                    completed, total_chunks, (completed / total_chunks) * 100, failed_chunks, rate
-                )
+                    
+                completed += 1
+                if completed % 10 == 0 or completed == len(pending_chunks):
+                    elapsed = time.time() - start_time
+                    rate = completed / elapsed if elapsed > 0 else 0
+                    logger.info(
+                        "Progress: %d/%d (%.1f%%) | Failed: %d | Rate: %.2f chunks/sec",
+                        completed, len(pending_chunks), (completed / len(pending_chunks)) * 100, failed_chunks, rate
+                    )
 
-    # Save raw extractions continuously or at the end
-    os.makedirs(os.path.dirname(EXTRACTIONS_FILE), exist_ok=True)
-    with open(EXTRACTIONS_FILE, "w", encoding="utf-8") as f:
-        for ext in all_extractions:
-            f.write(json.dumps(ext) + "\n")
-    logger.info("Raw extractions saved to %s", EXTRACTIONS_FILE)
-
-    # Aggregate
+    # 4. Aggregate
     logger.info("Aggregating entities and relations...")
     entity_index, ambiguous_merges = build_entity_index(all_extractions)
 
@@ -154,16 +186,13 @@ def main():
         entity_index=entity_index,
         ambiguous_merges=ambiguous_merges,
         total_chunks_processed=total_chunks,
-        failed_chunks=failed_chunks,
+        failed_chunks=len(pending_chunks) - (len(all_extractions) - len(processed_chunk_ids)),
     )
     save_stats(stats, STATS_FILE)
     print_stats_summary(stats)
 
     print(f"\n[OK] {notes_written} vault notes written to: {os.path.abspath(VAULT_DIR)}")
     print(f"[OK] Full extraction stats saved to: {os.path.abspath(STATS_FILE)}")
-    
-    total_time = (time.time() - start_time) / 3600
-    print(f"Total execution time: {total_time:.2f} hours")
 
 
 if __name__ == "__main__":

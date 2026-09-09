@@ -24,8 +24,8 @@ from graph.schema import (
 
 logger = logging.getLogger(__name__)
 
-# LiquidAI model via OpenRouter
-EXTRACTION_MODEL = "liquid/lfm-2.5-2.6b:free"
+# Model via OpenRouter (read from .env, fallback to liquid/lfm-2.5-2.6b:free)
+EXTRACTION_MODEL = os.getenv("EXTRACTION_MODEL", "liquid/lfm-2.5-2.6b:free")
 MAX_RETRIES_MALFORMED = 2
 
 SYSTEM_PROMPT = f"""You are a precise knowledge-graph extraction engine for the "Ashen Era" fictional universe.
