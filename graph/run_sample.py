@@ -158,9 +158,9 @@ def main():
     save_stats(stats, STATS_FILE)
     print_stats_summary(stats)
 
-    print(f"\n✓ {notes_written} vault notes written to: {os.path.abspath(VAULT_DIR)}")
-    print(f"✓ Stats saved to: {os.path.abspath(STATS_FILE)}")
-    print(f"✓ Raw extractions saved to: {os.path.abspath(SAMPLE_EXTRACTIONS_FILE)}")
+    print(f"\n[OK] {notes_written} vault notes written to: {os.path.abspath(VAULT_DIR)}")
+    print(f"[OK] Extraction stats saved to: {os.path.abspath(STATS_FILE)}")
+    print(f"[OK] Raw extractions saved to: {os.path.abspath(SAMPLE_EXTRACTIONS_FILE)}")
     print("\nReview the vault notes and stats before running full-corpus extraction.")
 
 
