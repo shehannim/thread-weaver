@@ -45,8 +45,9 @@ class MergedEntity:
     canonical_name: str
     entity_type: str
     aliases: set = field(default_factory=set)
-    relations: list = field(default_factory=list)     # List of relation dicts
-    mentions: list = field(default_factory=list)       # List of {chunk_id, doc_id, reliability}
+    relations: list = field(default_factory=list)      # List of relation dicts (excludes has_property)
+    properties: list = field(default_factory=list)     # List of has_property dicts (rendered as plain text, not links)
+    mentions: list = field(default_factory=list)        # List of {chunk_id, doc_id, reliability}
     contradictions: list = field(default_factory=list)  # List of contradiction descriptions
 
 
@@ -167,11 +168,36 @@ def build_entity_index(all_extractions: list[dict]) -> tuple[
     for extraction in all_extractions:
         chunk_meta = extraction.get("chunk_meta", {})
         for rel in extraction.get("relations", []):
-            # Resolve entity names to canonical
+            # Resolve source entity name to canonical
             src_norm = normalize_name(rel["source_entity"])
-            tgt_norm = normalize_name(rel["target_entity"])
-
             src_canon = canonical_map.get(src_norm, rel["source_entity"])
+
+            # --- has_property: store as a plain attribute, not a graph edge ---
+            if rel["relation_type"] == "has_property":
+                prop_record = {
+                    "property_value": rel.get("property_value", rel.get("target_entity", "")),
+                    "negated": rel.get("negated", False),
+                    "confidence": rel.get("confidence", 0.5),
+                    "justification": rel.get("justification", ""),
+                    "source_chunk_id": rel.get("source_chunk_id", chunk_meta.get("chunk_id", "")),
+                    "source_doc_id": rel.get("source_doc_id", chunk_meta.get("doc_id", "")),
+                    "source_reliability": rel.get("source_reliability", chunk_meta.get("source_reliability", "")),
+                }
+                if src_canon in entity_index:
+                    entity_index[src_canon].properties.append(prop_record)
+                else:
+                    entity_index[src_canon] = MergedEntity(
+                        canonical_name=src_canon,
+                        entity_type="unknown",
+                        mentions=[chunk_meta],
+                        properties=[prop_record],
+                    )
+                    canonical_map[src_norm] = src_canon
+                # Do NOT create a target node for property values
+                continue
+
+            # --- All other relation types: normal graph edge ---
+            tgt_norm = normalize_name(rel["target_entity"])
             tgt_canon = canonical_map.get(tgt_norm, rel["target_entity"])
 
             enriched_rel = {

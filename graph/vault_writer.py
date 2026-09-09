@@ -102,6 +102,45 @@ def write_entity_note(entity: MergedEntity, vault_dir: str) -> str:
             lines.append(format_relation_line(rel))
         lines.append("")
 
+    # --- Properties (has_property — plain text, not links) ---
+    if entity.properties:
+        lines.append("## Properties")
+        lines.append("")
+        # Deduplicate by property_value
+        seen_props = {}
+        for prop in entity.properties:
+            pval = prop.get("property_value", "").strip()
+            if not pval:
+                continue
+            key = (pval, prop.get("negated", False))
+            if key not in seen_props:
+                seen_props[key] = prop
+            else:
+                # Merge sources
+                existing = seen_props[key]
+                existing["justification"] += (
+                    f"; also: \"{prop.get('justification', '')}\" "
+                    f"[{prop.get('source_doc_id', '')}]"
+                )
+
+        for prop in seen_props.values():
+            pval = prop["property_value"]
+            negated = prop.get("negated", False)
+            confidence = prop.get("confidence", 0.5)
+            justification = prop.get("justification", "")
+            doc_id = prop.get("source_doc_id", "unknown")
+            reliability = prop.get("source_reliability", "unknown")
+
+            neg_tag = " **[NEGATED]**" if negated else ""
+            conf_tag = " `[low confidence]`" if confidence < LOW_CONFIDENCE_THRESHOLD else ""
+
+            lines.append(
+                f"- {pval}{neg_tag}{conf_tag} "
+                f"— \"{justification}\" "
+                f"[source: {doc_id}, reliability: {reliability}]"
+            )
+        lines.append("")
+
     # --- Contradictions ---
     if entity.contradictions:
         lines.append("## Contradictions")

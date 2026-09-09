@@ -97,10 +97,11 @@ class ExtractedEntity:
 class ExtractedRelation:
     source_entity: str
     relation_type: str        # Should match a RelationType value
-    target_entity: str
+    target_entity: str        # Must be a real named entity — empty for has_property
     negated: bool             # True if the text explicitly negates this relation
     confidence: float         # 0.0 – 1.0
     justification: str        # Short quote or paraphrase from the source text
+    property_value: str = ""  # For has_property only: the descriptive quality/attribute
     source_chunk_id: str = ""
     source_doc_id: str = ""
     source_reliability: str = ""  # high / medium / low
@@ -141,7 +142,14 @@ LLM_OUTPUT_SCHEMA = {
                 "properties": {
                     "source_entity": {"type": "string"},
                     "relation_type": {"type": "string", "enum": RELATION_TYPE_VALUES},
-                    "target_entity": {"type": "string"},
+                    "target_entity": {
+                        "type": "string",
+                        "description": "The target entity name. Must be a real named entity matching one of the 14 entity types. For has_property, leave this as an EMPTY STRING and put the descriptive value in property_value instead."
+                    },
+                    "property_value": {
+                        "type": "string",
+                        "description": "ONLY for has_property relations: the descriptive quality, attribute, or characteristic (e.g. 'vast scale', 'extreme heat', 'difficult to navigate'). Leave empty for all other relation types."
+                    },
                     "negated": {
                         "type": "boolean",
                         "description": "True if the text explicitly negates this relation (e.g. 'X is NOT a member of Y')"
@@ -182,6 +190,13 @@ def get_schema_description() -> str:
         "- Use 'related_to' only as a last resort when no other relation type fits.\n"
         "- Confidence: 1.0 = explicitly stated, 0.7–0.9 = strongly implied, "
         "0.4–0.7 = somewhat implied, <0.4 = speculative.\n"
+        "- IMPORTANT — has_property: the 'target_entity' field must ONLY contain "
+        "real named entities (matching one of the 14 entity types). For has_property "
+        "relations, put the descriptive quality/attribute in 'property_value' instead "
+        "and leave 'target_entity' as an empty string. Example: "
+        "source_entity='Ashen Wastes', relation_type='has_property', target_entity='', "
+        "property_value='vast scale'. Do NOT create entities for descriptive phrases "
+        "like 'vast scale' or 'difficult to escape'.\n"
     )
 
 
@@ -212,10 +227,12 @@ def validate_extraction(data: dict) -> tuple[bool, str]:
             return False, f"Entity {i} has invalid entity_type: {ent['entity_type']}"
 
     for i, rel in enumerate(data["relations"]):
-        for req in ["source_entity", "relation_type", "target_entity",
+        for req in ["source_entity", "relation_type",
                      "negated", "confidence", "justification"]:
             if req not in rel:
                 return False, f"Relation {i} missing '{req}'"
+        if "target_entity" not in rel and "property_value" not in rel:
+            return False, f"Relation {i} missing both 'target_entity' and 'property_value'"
         if rel["relation_type"] not in RELATION_TYPE_VALUES:
             return False, f"Relation {i} has invalid relation_type: {rel['relation_type']}"
         if not isinstance(rel["negated"], bool):
@@ -224,5 +241,19 @@ def validate_extraction(data: dict) -> tuple[bool, str]:
             return False, f"Relation {i} 'confidence' is not a number"
         if not (0.0 <= rel["confidence"] <= 1.0):
             return False, f"Relation {i} 'confidence' out of range [0, 1]"
+
+        # has_property: require property_value, allow empty target_entity
+        if rel["relation_type"] == "has_property":
+            if not rel.get("property_value", "").strip():
+                return False, (
+                    f"Relation {i} is has_property but missing or empty 'property_value'"
+                )
+        else:
+            # All other relation types require a non-empty target_entity
+            if not rel.get("target_entity", "").strip():
+                return False, (
+                    f"Relation {i} ({rel['relation_type']}) has empty 'target_entity' "
+                    f"— only has_property may omit target_entity"
+                )
 
     return True, ""

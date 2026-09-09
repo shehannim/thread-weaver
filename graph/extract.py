@@ -55,6 +55,13 @@ The JSON must conform exactly to this schema:
 6. Do NOT invent entities or relations not supported by the text.
 7. If no entities or relations are found, return {{"entities": [], "relations": []}}.
 8. Use "related_to" ONLY when no other relation type fits.
+9. CRITICAL — has_property: "target_entity" must ALWAYS be a real named entity
+   (a proper noun matching one of the 14 entity types). Descriptive qualities
+   like "vast scale", "extreme heat", "difficult to escape" are NOT entities.
+   For has_property relations: set "target_entity" to "" (empty string) and
+   put the descriptive value in "property_value". For ALL other relation types,
+   "property_value" should be "" (empty string) and "target_entity" must be
+   a real named entity. Do NOT create entity entries for descriptive phrases.
 """
 
 
