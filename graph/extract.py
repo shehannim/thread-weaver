@@ -25,7 +25,7 @@ from graph.schema import (
 logger = logging.getLogger(__name__)
 
 # DeepSeek model via OpenRouter
-EXTRACTION_MODEL = "deepseek/deepseek-chat"
+EXTRACTION_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 MAX_RETRIES_MALFORMED = 2
 
 SYSTEM_PROMPT = f"""You are a precise knowledge-graph extraction engine for the "Ashen Era" fictional universe.
