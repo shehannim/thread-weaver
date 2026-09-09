@@ -186,7 +186,11 @@ def extract_from_chunk(chunk: dict) -> dict | None:
             continue
 
         except Exception as e:
-            last_error = f"API/unexpected error: {e}"
+            if hasattr(e, 'last_attempt') and e.last_attempt is not None:
+                real_err = e.last_attempt.exception()
+                last_error = f"API/unexpected error: {real_err}"
+            else:
+                last_error = f"API/unexpected error: {e}"
             logger.error(
                 "Attempt %d/%d for chunk %s: %s",
                 attempt + 1, 1 + MAX_RETRIES_MALFORMED,

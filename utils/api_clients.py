@@ -39,7 +39,9 @@ def call_openrouter(messages, model="openai/gpt-4o-mini", temperature=0.7):
     )
     
     if not response.ok:
-        raise APIError(f"OpenRouter API error {response.status_code}: {response.text}")
+        err_msg = f"OpenRouter API error {response.status_code}: {response.text}"
+        print(f"DEBUG: {err_msg}")
+        raise APIError(err_msg)
         
     return response.json()
 
