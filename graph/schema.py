@@ -277,7 +277,11 @@ def validate_extraction(data: dict) -> tuple[bool, str]:
         if ent["entity_type"] not in ENTITY_TYPE_VALUES:
             return False, f"Entity {i} has invalid entity_type: {ent['entity_type']}"
         
-        valid_entity_names.add(ent["name"].lower())
+        name_val = ent["name"].strip()
+        if not _is_proper_name(name_val):
+            return False, f"Entity {i} name '{name_val}' looks like a lowercase common noun or descriptive phrase. If it is a real entity, capitalize it as a proper noun."
+
+        valid_entity_names.add(name_val.lower())
         for alias in ent.get("aliases", []):
             valid_entity_names.add(alias.lower())
 

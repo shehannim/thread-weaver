@@ -77,7 +77,7 @@ def check_vault():
 
     if problems["prompt_leak"]:
         print("=" * 60)
-        print("🚨 PROMPT LEAKAGE (instruction text echoed as entity names):")
+        print("[!] PROMPT LEAKAGE (instruction text echoed as entity names):")
         print("=" * 60)
         for name, pattern in problems["prompt_leak"]:
             print(f"  - \"{name}\" (matched: '{pattern}')")
@@ -86,7 +86,7 @@ def check_vault():
 
     if problems["descriptive_phrase"]:
         print("=" * 60)
-        print("⚠️  DESCRIPTIVE PHRASES (not proper-noun entity names):")
+        print("[!] DESCRIPTIVE PHRASES (not proper-noun entity names):")
         print("=" * 60)
         for name in problems["descriptive_phrase"]:
             print(f"  - \"{name}\"")
@@ -95,11 +95,11 @@ def check_vault():
 
     if problems["unknown_type"]:
         print("=" * 60)
-        print("📋 UNKNOWN ENTITY TYPE (stub nodes, may be legitimate):")
+        print("[?] UNKNOWN ENTITY TYPE (stub nodes, may be legitimate):")
         print("=" * 60)
         for name in problems["unknown_type"]:
             # Only flag if also a descriptive phrase
-            marker = " ← JUNK" if name in problems["descriptive_phrase"] else ""
+            marker = " <- JUNK" if name in problems["descriptive_phrase"] else ""
             print(f"  - \"{name}\"{marker}")
         print()
 
@@ -114,9 +114,9 @@ def check_vault():
     print(f"Total problems:            {total_problems}")
 
     if total_problems == 0:
-        print("\n✅ No junk nodes detected!")
+        print("\n[OK] No junk nodes detected!")
     else:
-        print(f"\n❌ {total_problems} junk node(s) found. Review and re-extract.")
+        print(f"\n[FAIL] {total_problems} junk node(s) found. Review and re-extract.")
 
     return total_problems
 
