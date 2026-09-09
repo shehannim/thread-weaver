@@ -38,6 +38,27 @@ CONTRADICTORY_PAIRS = {
 # Also catch direct negation contradictions (same relation, negated vs not)
 # This is handled separately in find_contradictions()
 
+INVERSE_RELATIONS = {
+    "leads": "led_by",
+    "led_by": "leads",
+    "depends_on": "required_by",
+    "required_by": "depends_on",
+    "causes": "caused_by",
+    "caused_by": "causes",
+    "succeeded_by": "preceded_by",
+    "preceded_by": "succeeded_by",
+    "powers": "powered_by",
+    "powered_by": "powers",
+    "controls": "controlled_by",
+    "controlled_by": "controls",
+    "possesses": "possessed_by",
+    "possessed_by": "possesses",
+    "located_in": "contains",
+    "contains": "located_in",
+    "composed_of": "part_of",
+    "part_of": "composed_of"
+}
+
 
 @dataclass
 class MergedEntity:

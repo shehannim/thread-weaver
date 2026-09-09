@@ -35,13 +35,11 @@ def call_openrouter(messages, model="openai/gpt-4o-mini", temperature=0.7):
         url="https://openrouter.ai/api/v1/chat/completions",
         headers=headers,
         json=data,
-        timeout=30
+        timeout=120
     )
     
     if not response.ok:
-        err_msg = f"OpenRouter API error {response.status_code}: {response.text}"
-        print(f"DEBUG: {err_msg}")
-        raise APIError(err_msg)
+        raise APIError(f"OpenRouter HTTP {response.status_code}: {response.text[:300]}")
         
     return response.json()
 
@@ -68,11 +66,11 @@ def get_voyage_embeddings(texts, model="voyage-4-large"):
         url="https://api.voyageai.com/v1/embeddings",
         headers=headers,
         json=data,
-        timeout=30
+        timeout=120
     )
     
     if not response.ok:
-        raise APIError(f"Voyage API error {response.status_code}: {response.text}")
+        raise APIError(f"Voyage HTTP {response.status_code}: {response.text[:300]}")
         
     result = response.json()
     return [item["embedding"] for item in result["data"]]
