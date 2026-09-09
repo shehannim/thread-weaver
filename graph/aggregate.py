@@ -22,16 +22,7 @@ logger = logging.getLogger(__name__)
 # Relation types that are semantically contradictory when applied to the same pair
 CONTRADICTORY_PAIRS = {
     frozenset({"allied_with", "enemy_of"}),
-    frozenset({"leads", "led_by"}),
     frozenset({"reports_to", "leads"}),
-    frozenset({"depends_on", "required_by"}),
-    frozenset({"caused_by", "causes"}),
-    frozenset({"succeeded_by", "preceded_by"}),
-    frozenset({"powers", "powered_by"}),
-    frozenset({"controls", "controlled_by"}),
-    frozenset({"possesses", "possessed_by"}),
-    frozenset({"located_in", "contains"}),
-    frozenset({"composed_of", "part_of"}),
     frozenset({"member_of", "enemy_of"}),       # Can't be member and enemy simultaneously (usually)
 }
 
@@ -128,6 +119,19 @@ def build_entity_index(all_extractions: list[dict]) -> tuple[
         # Check exact match first
         if norm in canonical_map:
             canonical = canonical_map[norm]
+            canon_type = entity_index[canonical].entity_type
+
+            if canon_type != "unknown" and etype != "unknown" and canon_type != etype:
+                ambiguous_merges.append(AmbiguousMerge(
+                    entity_a=canonical,
+                    entity_b=name,
+                    similarity=1.0,
+                    entity_type_a=canon_type,
+                    entity_type_b=etype,
+                ))
+            elif canon_type == "unknown" and etype != "unknown":
+                entity_index[canonical].entity_type = etype
+
             entity_index[canonical].aliases.update(aliases)
             entity_index[canonical].aliases.add(name)  # Keep original casing as alias
             entity_index[canonical].mentions.append(chunk_meta)
@@ -143,15 +147,35 @@ def build_entity_index(all_extractions: list[dict]) -> tuple[
                 best_match = existing_canon
 
         if best_ratio >= 0.92:
-            # Auto-merge
-            canonical_map[norm] = best_match
-            entity_index[best_match].aliases.update(aliases)
-            entity_index[best_match].aliases.add(name)
-            entity_index[best_match].mentions.append(chunk_meta)
-            logger.info(
-                "Auto-merged '%s' into '%s' (similarity: %.2f)",
-                name, best_match, best_ratio,
-            )
+            canon_type = entity_index[best_match].entity_type
+            if canon_type == etype or canon_type == "unknown" or etype == "unknown":
+                # Auto-merge
+                canonical_map[norm] = best_match
+                if canon_type == "unknown" and etype != "unknown":
+                    entity_index[best_match].entity_type = etype
+                entity_index[best_match].aliases.update(aliases)
+                entity_index[best_match].aliases.add(name)
+                entity_index[best_match].mentions.append(chunk_meta)
+                logger.info(
+                    "Auto-merged '%s' into '%s' (similarity: %.2f)",
+                    name, best_match, best_ratio,
+                )
+            else:
+                # Do not merge conflicting known types
+                ambiguous_merges.append(AmbiguousMerge(
+                    entity_a=best_match,
+                    entity_b=name,
+                    similarity=best_ratio,
+                    entity_type_a=canon_type,
+                    entity_type_b=etype,
+                ))
+                canonical_map[norm] = name
+                entity_index[name] = MergedEntity(
+                    canonical_name=name,
+                    entity_type=etype,
+                    aliases=aliases,
+                    mentions=[chunk_meta],
+                )
         elif best_ratio >= 0.85:
             # Flag for manual review, but do NOT merge
             ambiguous_merges.append(AmbiguousMerge(
